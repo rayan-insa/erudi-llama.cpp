@@ -134,6 +134,10 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
 
                 include(CheckCXXSourceRuns)
 
+
+
+                # ---------- START OF ERUDI PATCH
+
                 function(check_arm_feature tag code)
                     set(CMAKE_REQUIRED_FLAGS_SAVE ${CMAKE_REQUIRED_FLAGS})
                     set(CMAKE_REQUIRED_FLAGS "${ARM_MCPU_FLAG}+${tag}")
@@ -150,12 +154,28 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
                     set(CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS_SAVE})
                 endfunction()
 
-                check_arm_feature(dotprod "#include <arm_neon.h>\nint main() { int8x16_t _a, _b; volatile int32x4_t _s = vdotq_s32(_s, _a, _b); return 0; }")
-                check_arm_feature(i8mm    "#include <arm_neon.h>\nint main() { int8x16_t _a, _b; volatile int32x4_t _s = vmmlaq_s32(_s, _a, _b); return 0; }")
-                check_arm_feature(sve     "#include <arm_sve.h>\nint main()  { svfloat32_t _a, _b; volatile svfloat32_t _c = svadd_f32_z(svptrue_b8(), _a, _b); return 0; }")
-                check_arm_feature(sme     "#include <arm_sme.h>\n__arm_locally_streaming int main() { __asm__ volatile(\"smstart; smstop;\"); return 0; }")
+                # --- Apple Silicon safety patch: skip runtime feature detection on macOS ---
+                if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+                    message(STATUS "Skipping SVE/SME feature detection on Apple Silicon (M4 safe mode)")
+                    # Pretend reasonable defaults for Apple M-series (safe assumptions)
+                    set(GGML_MACHINE_SUPPORTS_dotprod TRUE)
+                    set(GGML_MACHINE_SUPPORTS_i8mm TRUE)
+                    set(GGML_MACHINE_SUPPORTS_sve FALSE)
+                    set(GGML_MACHINE_SUPPORTS_sme TRUE)
+                else()
+                    check_arm_feature(dotprod "#include <arm_neon.h>\nint main() { int8x16_t _a, _b; volatile int32x4_t _s = vdotq_s32(_s, _a, _b); return 0; }")
+                    check_arm_feature(i8mm    "#include <arm_neon.h>\nint main() { int8x16_t _a, _b; volatile int32x4_t _s = vmmlaq_s32(_s, _a, _b); return 0; }")
+                    check_arm_feature(sve     "#include <arm_sve.h>\nint main()  { svfloat32_t _a, _b; volatile svfloat32_t _c = svadd_f32_z(svptrue_b8(), _a, _b); return 0; }")
+                    check_arm_feature(sme     "#include <arm_sme.h>\n__arm_locally_streaming int main() { __asm__ volatile(\"smstart; smstop;\"); return 0; }")
+                endif()
+                # ---------------------------------------------------------------------------
 
                 list(APPEND ARCH_FLAGS "${ARM_MCPU_FLAG}${ARM_MCPU_FLAG_FIX}")
+
+                # ---------- END OF ERUDI PATCH
+
+
+                
             else()
                 if (GGML_CPU_ARM_ARCH)
                     list(APPEND ARCH_FLAGS -march=${GGML_CPU_ARM_ARCH})
